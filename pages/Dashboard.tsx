@@ -24,18 +24,17 @@ export const ItemLabels: Record<ExpenseItem, string> = {
 
 // 更新後更清楚的圖示映射
 export const ItemIcons: Record<ExpenseItem, string> = {
-  [ExpenseItem.FOOD]: 'lunch_dining',
-  [ExpenseItem.TRANSPORT]: 'commute',
-  [ExpenseItem.HOUSING]: 'apartment',
+  [ExpenseItem.FOOD]: 'restaurant',
+  [ExpenseItem.TRANSPORT]: 'directions_car',
+  [ExpenseItem.HOUSING]: 'home',
   [ExpenseItem.SHOPPING]: 'shopping_cart',
-  [ExpenseItem.ENTERTAINMENT]: 'sports_esports',
+  [ExpenseItem.ENTERTAINMENT]: 'movie',
   [ExpenseItem.CLOTHING]: 'checkroom',
   [ExpenseItem.HEALTH]: 'medical_services',
-  [ExpenseItem.OTHER]: 'widgets',
+  [ExpenseItem.OTHER]: 'more_horiz',
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit, onNavigateToAdd }) => {
-  // 過濾並排序消費紀錄：從最近到最早 (降序排列)
   const sortedExpenses = useMemo(() => {
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const filtered = expenses.filter(expense => expense.timestamp >= oneWeekAgo);
@@ -56,8 +55,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
 
   return (
     <div className="flex flex-col px-6 pt-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      
-      {/* 歡迎區塊 */}
       <div className="flex items-center gap-4 mb-8 bg-white p-5 rounded-[28px] shadow-sm border border-blue-50/50">
         <div className="size-14 rounded-2xl bg-primary-soft overflow-hidden border-2 border-white shadow-sm shrink-0">
           {user?.photoURL ? (
@@ -79,12 +76,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-text-main tracking-tight italic">消費紀錄</h1>
-          <p className="text-sm text-slate-400 mt-1">目前顯示最近 {sortedExpenses.length} 筆支出</p>
-        </div>
-        <div className="flex flex-col items-end">
-           <span className="text-[10px] font-black px-3 py-1 bg-primary text-white rounded-full uppercase tracking-widest shadow-lg shadow-primary/20">
-            即時同步
-          </span>
+          <p className="text-sm text-slate-400 mt-1">最近的支出明細</p>
         </div>
       </div>
 
@@ -95,12 +87,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
               <span className="material-symbols-outlined text-4xl">calendar_today</span>
             </div>
             <p className="text-slate-400 font-bold px-8 text-center">尚無消費紀錄</p>
-            <button 
-              onClick={onNavigateToAdd}
-              className="mt-4 text-primary font-bold text-sm underline underline-offset-4"
-            >
-              立即新增第一筆
-            </button>
           </div>
         ) : (
           sortedExpenses.map((expense) => (
@@ -119,26 +105,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
                     <span className="mx-1.5 opacity-20">•</span>
                     {expense.description}
                   </p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <p className="text-slate-300 text-[10px] font-medium">{formatDate(expense.timestamp)}</p>
-                    <p className="text-slate-200 text-[9px] font-mono tracking-tighter">ID: {expense.id.slice(-6).toUpperCase()}</p>
-                  </div>
+                  <p className="text-slate-300 text-[10px] mt-0.5">{formatDate(expense.timestamp)}</p>
                 </div>
               </div>
               <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <button 
-                  onClick={() => onEdit(expense)}
-                  className="text-slate-300 hover:text-primary p-2 transition-colors"
-                  title="編輯"
-                >
-                  <span className="material-symbols-outlined text-[20px]">edit_note</span>
+                <button onClick={() => onEdit(expense)} className="text-slate-300 hover:text-primary p-2">
+                  <span className="material-symbols-outlined text-[20px]">edit</span>
                 </button>
-                <button 
-                  onClick={() => onDelete(expense.id)}
-                  className="text-slate-300 hover:text-red-400 p-2 transition-colors"
-                  title="刪除"
-                >
-                  <span className="material-symbols-outlined text-[20px]">delete_outline</span>
+                <button onClick={() => onDelete(expense.id)} className="text-slate-300 hover:text-red-400 p-2">
+                  <span className="material-symbols-outlined text-[20px]">delete</span>
                 </button>
               </div>
             </div>
@@ -146,11 +121,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
         )}
       </div>
 
-      {/* Floating Action Button */}
       <div className="fixed bottom-28 left-0 right-0 max-w-[480px] mx-auto px-6 flex justify-end pointer-events-none">
         <button 
           onClick={onNavigateToAdd}
-          className="pointer-events-auto flex items-center justify-center bg-primary size-16 rounded-2xl text-white shadow-2xl shadow-primary/40 active:scale-90 transition-all hover:rotate-90"
+          className="pointer-events-auto flex items-center justify-center bg-primary size-16 rounded-2xl text-white shadow-2xl shadow-primary/40 active:scale-90 transition-all"
         >
           <span className="material-symbols-outlined text-[32px] font-bold">add</span>
         </button>
