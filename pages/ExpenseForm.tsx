@@ -10,13 +10,7 @@ interface ExpenseFormProps {
   title: string;
 }
 
-// Fixed: Subsequent property declarations must have the same type.
-// The environment already defines window.aistudio as AIStudio.
-declare global {
-  interface Window {
-    aistudio: AIStudio;
-  }
-}
+// Fixed: Removed local declare global for window.aistudio to avoid conflict with the environment's AIStudio type.
 
 const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title }) => {
   const [amount, setAmount] = useState<string>(initialExpense?.amount.toString() || '');
@@ -30,10 +24,11 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
 
   const availableItems = Object.values(ExpenseItem);
 
-  // 初始檢查是否已有金鑰
+  // 檢查初始金鑰狀態
   useEffect(() => {
     const checkKey = async () => {
       try {
+        // @ts-ignore - aistudio is provided by the environment
         const selected = await window.aistudio?.hasSelectedApiKey();
         setHasKey(selected ?? false);
       } catch (e) {
@@ -71,33 +66,34 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
   const performAiRecognition = async () => {
     if (!capturedImage) return;
 
-    // 1. 檢查並引導金鑰選取
-    try {
-      const isKeySelected = await window.aistudio?.hasSelectedApiKey();
-      if (!isKeySelected) {
-        console.log("[AI] 未偵測到金鑰，開啟系統選取對話框...");
+    // 1. 確保 API Key 已選取
+    // @ts-ignore - aistudio is provided by the environment
+    const isKeySelected = await window.aistudio?.hasSelectedApiKey();
+    if (!isKeySelected || !process.env.API_KEY) {
+      console.log("[AI] 偵測到金鑰未授權，開啟授權視窗...");
+      try {
+        // @ts-ignore - aistudio is provided by the environment
         await window.aistudio?.openSelectKey();
-        // 根據規範：假設選取成功並直接繼續
+        // 根據規範：假設選取成功，直接繼續後續流程，不在此中斷
         setHasKey(true);
+      } catch (e) {
+        console.error("[AI] 授權流程被取消", e);
+        return;
       }
-    } catch (e) {
-      console.error("[AI] 金鑰選取流程中斷", e);
-      return;
     }
 
     setIsScanning(true);
     
     try {
-      // 2. 每次調用前獲取最新的 GoogleGenAI 實例
+      // 2. 獲取最新注入的 API Key 並建立實例
       const currentApiKey = process.env.API_KEY;
       if (!currentApiKey) {
-        throw new Error("API Key 尚未就緒。請確認您已在對話框中選取正確的金鑰。");
+        throw new Error("未能獲取 API Key。請確保您已選取正確的 Google Cloud 專案金鑰。");
       }
 
-      console.log("[AI] 啟動 Gemini 辨識...");
       const base64Content = capturedImage.split(',')[1];
-      
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
+      
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: {
@@ -109,12 +105,11 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
               },
             },
             {
-              text: `你是一位專業的收據識別助手。請分析圖片內容，識別消費金額、內容與類別。
-              請以 JSON 格式回傳：
+              text: `你是一位收據識別助手。請分析圖片內容並識別：
               1. amount (number): 消費總額
-              2. description (string): 消費店家名稱或主要購買品項
-              3. item (string): 必須是以下其中之一: "food", "transport", "housing", "shopping", "entertainment", "clothing", "health", "other"
-              嚴禁包含任何額外的解釋文字或 Markdown 標籤。`
+              2. description (string): 消費店家或內容
+              3. item (string): 類別，必須是 food, transport, housing, shopping, entertainment, clothing, health, other 其中之一。
+              回傳格式必須為 JSON。`
             }
           ]
         },
@@ -140,19 +135,17 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
       }
 
     } catch (error: any) {
-      console.error("[AI] 辨識發生錯誤:", error);
+      console.error("[AI] 辨識錯誤:", error);
       
-      // 根據規範：如果收到 404/entity not found 錯誤，重設金鑰狀態
-      if (error.message?.includes("Requested entity was not found") || error.message?.includes("404")) {
+      // 根據規範：若發生 404/entity not found 錯誤，重設金鑰狀態並引導重新選取
+      if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key not valid")) {
         setHasKey(false);
-        alert("金鑰無效或專案未授權。請確保您選取的是一個「具備計費功能」的付費專案金鑰。");
-        window.aistudio?.openSelectKey();
+        alert("目前的金鑰或專案無效。請點擊按鈕重新「管理金鑰」，並確保選取的是具備付費專案的 API Key。");
       } else {
-        alert(`辨識失敗: ${error.message || '未知錯誤'}`);
+        alert(`辨識失敗: ${error.message}`);
       }
     } finally {
       setIsScanning(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -167,24 +160,22 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
 
   return (
     <div className="flex flex-col h-full bg-background animate-in slide-in-from-right-4 duration-300">
-      {/* 全螢幕掃描動畫 */}
+      {/* 掃描動畫特效 */}
       {isScanning && (
         <div className="fixed inset-0 bg-primary/40 backdrop-blur-xl z-[100] flex flex-col items-center justify-center p-10 text-center">
           <div className="relative mb-12">
             <div className="w-32 h-32 border-8 border-white/20 border-t-white rounded-full animate-spin"></div>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="material-symbols-outlined text-white text-6xl animate-pulse">receipt_long</span>
+              <span className="material-symbols-outlined text-white text-6xl animate-pulse">qr_code_scanner</span>
             </div>
-            {/* 掃描線動畫 */}
             <div className="absolute top-0 left-0 w-full h-1 bg-white shadow-[0_0_20px_white] animate-[bounce_1.5s_infinite]"></div>
           </div>
-          <h3 className="text-white text-3xl font-black italic tracking-tight mb-3">AI 智慧分析中</h3>
+          <h3 className="text-white text-3xl font-black italic tracking-tight mb-3">智慧分析中</h3>
           <p className="text-white/80 text-sm font-medium">Gemini 正在提取收據資訊...</p>
         </div>
       )}
 
       <div className="flex flex-col items-center justify-center py-8 px-6 relative">
-        {/* 相機按鈕 */}
         {!initialExpense && (
           <button 
             onClick={handleScanClick}
@@ -194,7 +185,6 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
           </button>
         )}
 
-        {/* 預覽與辨識按鈕 */}
         {capturedImage && !initialExpense && (
           <div className="w-full flex flex-col items-center mb-8 animate-in zoom-in-90 duration-500">
             <div className="relative group">
@@ -202,7 +192,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
               <img 
                 src={capturedImage} 
                 alt="Receipt" 
-                className="relative w-40 h-40 object-cover rounded-[32px] border-4 border-white shadow-2xl rotate-2 transition-transform hover:rotate-0"
+                className="relative w-40 h-40 object-cover rounded-[32px] border-4 border-white shadow-2xl rotate-2"
               />
               <button 
                 onClick={() => setCapturedImage(null)}
@@ -221,25 +211,22 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
               }`}
             >
               <span className="material-symbols-outlined text-2xl">
-                {hasKey ? 'auto_awesome' : 'key'}
+                {hasKey ? 'auto_awesome' : 'vpn_key'}
               </span>
-              {hasKey ? '進行辨識' : '點擊以授權 API Key'}
+              {hasKey ? '開始智慧辨識' : '點擊以授權 API Key'}
             </button>
             
-            {/* 提示訊息與官方連結 */}
-            <div className="mt-4 text-center px-6">
-              <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
-                {hasKey ? '已就緒。如辨識失敗，請確認金鑰專案狀態。' : '辨識功能需選取具備付費專案的 API Key。'}
-              </p>
+            <p className="mt-4 text-[10px] text-slate-400 text-center px-10">
+              {hasKey ? 'AI 功能已就緒。' : '辨識功能需選取具備付費專案的 API Key。'}
+              <br/>
               <a 
                 href="https://ai.google.dev/gemini-api/docs/billing" 
                 target="_blank" 
-                rel="noopener noreferrer"
-                className="text-primary text-[10px] font-bold underline decoration-primary/30 hover:decoration-primary mt-1 inline-block"
+                className="text-primary underline font-bold"
               >
-                瞭解如何啟用計費專案
+                瞭解計費與授權規範
               </a>
-            </div>
+            </p>
           </div>
         )}
 
@@ -267,7 +254,6 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
         </div>
       </div>
 
-      {/* 表單內容 */}
       <div className="bg-white rounded-t-[40px] flex-1 p-8 border-t border-blue-50 shadow-inner overflow-y-auto">
         <div className="mb-8">
           <div className="flex items-center justify-between mb-5">
@@ -283,7 +269,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
                 className={`flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all ${
                   item === itemKey 
                     ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20 scale-105 z-10' 
-                    : 'bg-slate-50 border-slate-100 text-slate-400 opacity-60 hover:opacity-100'
+                    : 'bg-slate-50 border-slate-100 text-slate-400 opacity-60'
                 }`}
               >
                 <span className="material-symbols-outlined text-2xl">{ItemIcons[itemKey as ExpenseItem]}</span>
@@ -304,7 +290,6 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
         </div>
       </div>
 
-      {/* 儲存按鈕 */}
       <div className="sticky bottom-0 w-full bg-white border-t border-blue-50 pb-8 px-8 pt-6">
         <button 
           onClick={handleSave}
