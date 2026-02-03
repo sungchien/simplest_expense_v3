@@ -22,16 +22,16 @@ export const ItemLabels: Record<ExpenseItem, string> = {
   [ExpenseItem.OTHER]: '其他',
 };
 
-// 更新後更清楚的圖示映射
+// 更新後更直觀的圖示映射
 export const ItemIcons: Record<ExpenseItem, string> = {
-  [ExpenseItem.FOOD]: 'restaurant',
-  [ExpenseItem.TRANSPORT]: 'directions_car',
-  [ExpenseItem.HOUSING]: 'home',
+  [ExpenseItem.FOOD]: 'lunch_dining',
+  [ExpenseItem.TRANSPORT]: 'commute',
+  [ExpenseItem.HOUSING]: 'apartment',
   [ExpenseItem.SHOPPING]: 'shopping_cart',
-  [ExpenseItem.ENTERTAINMENT]: 'movie',
+  [ExpenseItem.ENTERTAINMENT]: 'sports_esports',
   [ExpenseItem.CLOTHING]: 'checkroom',
   [ExpenseItem.HEALTH]: 'medical_services',
-  [ExpenseItem.OTHER]: 'more_horiz',
+  [ExpenseItem.OTHER]: 'widgets',
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit, onNavigateToAdd }) => {
@@ -76,7 +76,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-text-main tracking-tight italic">消費紀錄</h1>
-          <p className="text-sm text-slate-400 mt-1">最近的支出明細</p>
+          <p className="text-sm text-slate-400 mt-1">最近支出明細</p>
         </div>
       </div>
 
