@@ -44,13 +44,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     console.log("[App] 初始化 Auth 監聽器...");
-    
-    // 雖然主推 Popup，但仍檢查是否有 Redirect 遺留結果
     getRedirectResult(auth).catch(() => {});
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
-      console.log("[App] Auth 狀態:", fbUser ? `已登入 (${fbUser.email})` : "未登入");
-      
       if (fbUser) {
         const currentUser: User = {
           uid: fbUser.uid,
@@ -93,7 +89,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
-    setDbError(null);
     
     const userDocRef = doc(db, 'users', user.uid);
     const unsubscribeUser = onSnapshot(userDocRef, (snapshot) => {
@@ -115,7 +110,6 @@ const App: React.FC = () => {
       });
       setExpenses(expenseData);
     }, (error) => {
-      console.error("[App] Firestore 報錯:", error);
       if (error.message.includes('https://console.firebase.google.com')) {
         const urlMatch = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
         if (urlMatch) { setIndexUrl(urlMatch[0]); setDbError("INDEX_REQUIRED"); }
@@ -198,14 +192,14 @@ const App: React.FC = () => {
       case 'WELCOME': return <Welcome user={user} onConfirm={() => setView('DASHBOARD')} />;
       case 'DASHBOARD': return <Dashboard user={user} expenses={expenses} onDelete={handleDeleteExpense} onEdit={(ex) => {setEditingExpense(ex); setView('EDIT_EXPENSE');}} onNavigateToAdd={() => setView('ADD_EXPENSE')} />;
       case 'REPORT': return <Report expenses={expenses} budget={budget} onUpdateBudget={handleUpdateBudget} />;
-      case 'ADD_EXPENSE': return <ExpenseForm title="新增支出" onSave={handleAddExpense} />;
-      case 'EDIT_EXPENSE': return editingExpense ? <ExpenseForm title="編輯支出" initialExpense={editingExpense} onSave={handleUpdateExpense} /> : null;
+      case 'ADD_EXPENSE': return <ExpenseForm title="新增支出" onSave={handleAddExpense} onCancel={() => handleNavigate('DASHBOARD')} />;
+      case 'EDIT_EXPENSE': return editingExpense ? <ExpenseForm title="編輯支出" initialExpense={editingExpense} onSave={handleUpdateExpense} onCancel={() => handleNavigate('DASHBOARD')} /> : null;
       default: return null;
     }
   };
 
   return (
-    <Layout user={user} currentView={view} onNavigate={handleNavigate} onLogout={handleLogout} title={view.includes('EXPENSE') ? '編輯支出' : view === 'REPORT' ? '支出分析' : undefined} showBack={view.includes('EXPENSE')}>
+    <Layout user={user} currentView={view} onNavigate={handleNavigate} onLogout={handleLogout} title={view.includes('EXPENSE') ? (view === 'EDIT_EXPENSE' ? '編輯支出' : '新增支出') : view === 'REPORT' ? '支出分析' : undefined} showBack={view.includes('EXPENSE')}>
       {renderContent()}
     </Layout>
   );

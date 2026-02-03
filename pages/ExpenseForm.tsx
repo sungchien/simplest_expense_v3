@@ -7,12 +7,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 interface ExpenseFormProps {
   initialExpense?: Expense;
   onSave: (amount: number, item: ExpenseItem, description: string) => void;
+  onCancel: () => void;
   title: string;
 }
 
-// Fixed: Removed local declare global for window.aistudio to avoid conflict with the environment's AIStudio type.
-
-const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title }) => {
+const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, onCancel, title }) => {
   const [amount, setAmount] = useState<string>(initialExpense?.amount.toString() || '');
   const [item, setItem] = useState<ExpenseItem>(initialExpense?.item || ExpenseItem.FOOD);
   const [description, setDescription] = useState<string>(initialExpense?.description || '');
@@ -24,11 +23,11 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
 
   const availableItems = Object.values(ExpenseItem);
 
-  // 檢查初始金鑰狀態
+  // 初始檢查是否已有金鑰
   useEffect(() => {
     const checkKey = async () => {
       try {
-        // @ts-ignore - aistudio is provided by the environment
+        // @ts-ignore
         const selected = await window.aistudio?.hasSelectedApiKey();
         setHasKey(selected ?? false);
       } catch (e) {
@@ -51,13 +50,24 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
     fileInputRef.current?.click();
   };
 
+  const handleKeySetup = async () => {
+    try {
+      // @ts-ignore
+      await window.aistudio?.openSelectKey();
+      setHasKey(true);
+    } catch (e) {
+      console.error("Key setup cancelled", e);
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      const base64Data = await fileToBase64(file);
-      setCapturedImage(base64Data);
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => setCapturedImage(reader.result as string);
     } catch (error) {
       console.error("[AI] 圖片讀取失敗:", error);
     }
@@ -66,30 +76,18 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
   const performAiRecognition = async () => {
     if (!capturedImage) return;
 
-    // 1. 確保 API Key 已選取
-    // @ts-ignore - aistudio is provided by the environment
+    // 檢查金鑰，若無則引導授權
+    // @ts-ignore
     const isKeySelected = await window.aistudio?.hasSelectedApiKey();
     if (!isKeySelected || !process.env.API_KEY) {
-      console.log("[AI] 偵測到金鑰未授權，開啟授權視窗...");
-      try {
-        // @ts-ignore - aistudio is provided by the environment
-        await window.aistudio?.openSelectKey();
-        // 根據規範：假設選取成功，直接繼續後續流程，不在此中斷
-        setHasKey(true);
-      } catch (e) {
-        console.error("[AI] 授權流程被取消", e);
-        return;
-      }
+      await handleKeySetup();
     }
 
     setIsScanning(true);
     
     try {
-      // 2. 獲取最新注入的 API Key 並建立實例
       const currentApiKey = process.env.API_KEY;
-      if (!currentApiKey) {
-        throw new Error("未能獲取 API Key。請確保您已選取正確的 Google Cloud 專案金鑰。");
-      }
+      if (!currentApiKey) throw new Error("請先授權 API Key");
 
       const base64Content = capturedImage.split(',')[1];
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
@@ -98,19 +96,8 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
         model: 'gemini-3-flash-preview',
         contents: {
           parts: [
-            {
-              inlineData: {
-                data: base64Content,
-                mimeType: "image/jpeg",
-              },
-            },
-            {
-              text: `你是一位收據識別助手。請分析圖片內容並識別：
-              1. amount (number): 消費總額
-              2. description (string): 消費店家或內容
-              3. item (string): 類別，必須是 food, transport, housing, shopping, entertainment, clothing, health, other 其中之一。
-              回傳格式必須為 JSON。`
-            }
+            { inlineData: { data: base64Content, mimeType: "image/jpeg" } },
+            { text: `辨識收據內容並回傳 JSON: {amount: number, description: string, item: string(food, transport, housing, shopping, entertainment, clothing, health, other)}` }
           ]
         },
         config: {
@@ -133,14 +120,11 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
       if (result.item && availableItems.includes(result.item as ExpenseItem)) {
         setItem(result.item as ExpenseItem);
       }
-
+      setCapturedImage(null); // 辨識成功後清除預覽
     } catch (error: any) {
-      console.error("[AI] 辨識錯誤:", error);
-      
-      // 根據規範：若發生 404/entity not found 錯誤，重設金鑰狀態並引導重新選取
-      if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key not valid")) {
+      if (error.message?.includes("Requested entity was not found")) {
         setHasKey(false);
-        alert("目前的金鑰或專案無效。請點擊按鈕重新「管理金鑰」，並確保選取的是具備付費專案的 API Key。");
+        alert("金鑰無效或專案未授權計費。請重新設置金鑰。");
       } else {
         alert(`辨識失敗: ${error.message}`);
       }
@@ -149,95 +133,23 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
     }
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
-  };
-
   return (
     <div className="flex flex-col h-full bg-background animate-in slide-in-from-right-4 duration-300">
-      {/* 掃描動畫特效 */}
+      {/* 掃描動畫 */}
       {isScanning && (
         <div className="fixed inset-0 bg-primary/40 backdrop-blur-xl z-[100] flex flex-col items-center justify-center p-10 text-center">
-          <div className="relative mb-12">
-            <div className="w-32 h-32 border-8 border-white/20 border-t-white rounded-full animate-spin"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="material-symbols-outlined text-white text-6xl animate-pulse">qr_code_scanner</span>
-            </div>
-            <div className="absolute top-0 left-0 w-full h-1 bg-white shadow-[0_0_20px_white] animate-[bounce_1.5s_infinite]"></div>
-          </div>
-          <h3 className="text-white text-3xl font-black italic tracking-tight mb-3">智慧分析中</h3>
-          <p className="text-white/80 text-sm font-medium">Gemini 正在提取收據資訊...</p>
+          <div className="w-24 h-24 border-8 border-white/20 border-t-white rounded-full animate-spin mb-6"></div>
+          <h3 className="text-white text-2xl font-black italic">Gemini 辨識中...</h3>
         </div>
       )}
 
       <div className="flex flex-col items-center justify-center py-8 px-6 relative">
-        {!initialExpense && (
-          <button 
-            onClick={handleScanClick}
-            className="absolute top-6 right-6 bg-white size-12 rounded-2xl shadow-xl border border-blue-50 text-primary flex items-center justify-center active:scale-90 transition-all z-10"
-          >
-            <span className="material-symbols-outlined text-2xl font-bold">photo_camera</span>
-          </button>
-        )}
-
-        {capturedImage && !initialExpense && (
-          <div className="w-full flex flex-col items-center mb-8 animate-in zoom-in-90 duration-500">
-            <div className="relative group">
-              <div className="absolute -inset-2 bg-gradient-to-tr from-primary/20 to-blue-400/20 blur-xl rounded-full opacity-50"></div>
-              <img 
-                src={capturedImage} 
-                alt="Receipt" 
-                className="relative w-40 h-40 object-cover rounded-[32px] border-4 border-white shadow-2xl rotate-2"
-              />
-              <button 
-                onClick={() => setCapturedImage(null)}
-                className="absolute -top-3 -right-3 bg-red-500 text-white size-8 rounded-full shadow-lg flex items-center justify-center border-2 border-white"
-              >
-                <span className="material-symbols-outlined text-sm font-bold">close</span>
-              </button>
-            </div>
-            
-            <button 
-              onClick={performAiRecognition}
-              className={`mt-8 px-10 py-4 rounded-full font-black italic tracking-widest shadow-xl transition-all flex items-center gap-3 active:scale-95 ${
-                hasKey 
-                  ? 'bg-primary text-white shadow-primary/30' 
-                  : 'bg-orange-500 text-white shadow-orange-200'
-              }`}
-            >
-              <span className="material-symbols-outlined text-2xl">
-                {hasKey ? 'auto_awesome' : 'vpn_key'}
-              </span>
-              {hasKey ? '開始智慧辨識' : '點擊以授權 API Key'}
-            </button>
-            
-            <p className="mt-4 text-[10px] text-slate-400 text-center px-10">
-              {hasKey ? 'AI 功能已就緒。' : '辨識功能需選取具備付費專案的 API Key。'}
-              <br/>
-              <a 
-                href="https://ai.google.dev/gemini-api/docs/billing" 
-                target="_blank" 
-                className="text-primary underline font-bold"
-              >
-                瞭解計費與授權規範
-              </a>
-            </p>
-          </div>
-        )}
-
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileChange} 
-          accept="image/*" 
-          capture="environment" 
-          className="hidden" 
-        />
+        <button 
+          onClick={handleScanClick}
+          className="absolute top-6 right-6 bg-white size-12 rounded-2xl shadow-xl border border-blue-50 text-primary flex items-center justify-center active:scale-90 z-10"
+        >
+          <span className="material-symbols-outlined text-2xl font-bold">photo_camera</span>
+        </button>
 
         <p className="text-primary font-bold tracking-[0.2em] mb-2 text-[10px] uppercase opacity-40">消費金額 (NT$)</p>
         <div className="flex items-center justify-center w-full">
@@ -255,20 +167,58 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
       </div>
 
       <div className="bg-white rounded-t-[40px] flex-1 p-8 border-t border-blue-50 shadow-inner overflow-y-auto">
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-text-main text-sm font-bold tracking-tight">支出類別</h3>
-            <span className="text-primary text-[10px] font-black px-3 py-1 bg-primary-light rounded-full border border-primary-soft italic uppercase">Category</span>
+        {/* AI 辨識設定卡片 */}
+        <div className="mb-8 p-5 bg-primary-light rounded-[28px] border border-primary-soft">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-primary">
+              <span className="material-symbols-outlined text-xl">auto_awesome</span>
+              <h4 className="text-sm font-bold">AI 智慧辨識</h4>
+            </div>
+            <div className={`size-2 rounded-full ${hasKey ? 'bg-green-500 animate-pulse' : 'bg-orange-400'}`}></div>
           </div>
+          
+          {capturedImage ? (
+            <div className="flex flex-col gap-4">
+              <img src={capturedImage} className="w-full h-32 object-cover rounded-2xl border-2 border-white shadow-sm" alt="Preview" />
+              <button 
+                onClick={performAiRecognition}
+                className="w-full bg-primary text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 active:scale-95 transition-all"
+              >
+                立即分析圖片
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="text-[11px] text-primary/60 font-medium">
+                {hasKey ? '金鑰已就緒，可點擊上方相機進行收據辨識。' : '尚未授權 Gemini API，請點擊下方按鈕進行設定。'}
+              </p>
+              <button 
+                onClick={handleKeySetup}
+                className="text-xs font-black text-primary bg-white px-4 py-2 rounded-lg border border-primary-soft shadow-sm hover:bg-primary hover:text-white transition-all self-start"
+              >
+                {hasKey ? '更改 API 金鑰' : '立即設置 API Key'}
+              </button>
+            </div>
+          )}
+          <a 
+            href="https://ai.google.dev/gemini-api/docs/billing" 
+            target="_blank" 
+            className="text-[9px] text-primary/40 underline block mt-3"
+          >
+            關於金鑰計費與授權說明
+          </a>
+        </div>
+
+        <div className="mb-8">
+          <h3 className="text-text-main text-sm font-bold tracking-tight mb-5">支出類別</h3>
           <div className="grid grid-cols-4 gap-3">
             {availableItems.map(itemKey => (
               <button
                 key={itemKey}
-                type="button"
                 onClick={() => setItem(itemKey as ExpenseItem)}
                 className={`flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all ${
                   item === itemKey 
-                    ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20 scale-105 z-10' 
+                    ? 'bg-primary border-primary text-white shadow-lg scale-105 z-10' 
                     : 'bg-slate-50 border-slate-100 text-slate-400 opacity-60'
                 }`}
               >
@@ -279,24 +229,40 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, title
           </div>
         </div>
 
-        <div className="mt-4">
+        <div>
           <h3 className="text-text-main text-sm font-bold tracking-tight mb-3">消費說明</h3>
           <textarea 
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-text-main placeholder:text-slate-300 focus:ring-4 focus:ring-primary/5 focus:border-primary focus:bg-white h-24 resize-none transition-all outline-none text-sm" 
-            placeholder="點擊相機辨識或在此手動輸入..."
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-text-main placeholder:text-slate-300 focus:ring-4 focus:ring-primary/5 focus:border-primary h-24 resize-none transition-all outline-none text-sm" 
+            placeholder="記錄一下這筆錢花在哪裡..."
           />
         </div>
       </div>
 
-      <div className="sticky bottom-0 w-full bg-white border-t border-blue-50 pb-8 px-8 pt-6">
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        accept="image/*" 
+        capture="environment" 
+        className="hidden" 
+      />
+
+      {/* 底部按鈕區 */}
+      <div className="sticky bottom-0 w-full bg-white border-t border-blue-50 pb-8 px-8 pt-6 flex gap-3">
+        <button 
+          onClick={onCancel}
+          className="flex-[1] bg-slate-50 text-slate-400 font-bold py-5 rounded-[24px] border border-slate-100 hover:bg-slate-100 transition-all active:scale-95"
+        >
+          取消
+        </button>
         <button 
           onClick={handleSave}
-          className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-5 rounded-[24px] shadow-2xl shadow-blue-200 flex items-center justify-center gap-3 text-lg active:scale-[0.98] transition-all"
+          className="flex-[2.5] bg-primary hover:bg-primary-dark text-white font-bold py-5 rounded-[24px] shadow-2xl shadow-blue-200 flex items-center justify-center gap-3 text-lg active:scale-[0.98] transition-all"
         >
           <span className="material-symbols-outlined font-bold text-2xl">check_circle</span>
-          確認儲存紀錄
+          確認儲存
         </button>
       </div>
     </div>
