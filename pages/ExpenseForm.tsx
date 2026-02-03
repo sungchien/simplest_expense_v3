@@ -54,9 +54,14 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialExpense, onSave, onCan
       return;
     }
 
-    // 根據使用者要求，直接設定金鑰
-    const targetKey = "AIzaSyDo9o-Ecga3o6vtJAcBXHFQI2DZgVIg_Ec";
+    // 使用環境變數中的 GEMINI_API_KEY
+    const targetKey = process.env.GEMINI_API_KEY;
     
+    if (!targetKey) {
+      alert("系統尚未配置 GEMINI_API_KEY，請檢查環境設定。");
+      return;
+    }
+
     setIsScanning(true);
     
     try {
